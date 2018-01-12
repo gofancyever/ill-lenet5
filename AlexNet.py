@@ -9,6 +9,7 @@ from torchvision import datasets,models,transforms
 import matplotlib.pyplot as plt
 import torch.utils.data as Data
 import time
+from torch.optim import lr_scheduler
 
 plt.ion()
 
@@ -37,7 +38,7 @@ def imshow(inp,title=None):
     plt.imshow(inp)
     if title is not  None:
         plt.title(title)
-    plt.imshow()
+    plt.show()
 
 #一批训练集
 inputs,classes = next(iter(dataloaders['wheat_data']))
@@ -125,3 +126,12 @@ def visualize_model(model,num_images=6):
             imshow(inputs.cpu().data[j])
             if images_so_far == num_images:
                 return
+model_ft = models.resnet18(pretrained=True)
+num_ftrs = model_ft.fc.in_features
+model_ft.fc = nn.Linear(num_ftrs,3)
+if use_gpu:
+    model_ft = model_ft.cuda()
+criterion = nn.CrossEntropyLoss()
+optimizer_ft = optim.SGD(model_ft.parameters(),lr=0.001,momentum=0.9)
+exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft,step_size=7,gamma=0.1)
+model_ft = train_model(model_ft,criterion,optimizer_ft,exp_lr_scheduler,num_epochs=25)
