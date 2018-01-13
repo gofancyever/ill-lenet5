@@ -10,6 +10,10 @@ import matplotlib.pyplot as plt
 import torch.utils.data as Data
 import time
 from torch.optim import lr_scheduler
+from logger import Logger
+
+
+logger = Logger('./logs')
 
 plt.ion()
 
@@ -51,7 +55,7 @@ imshow(out,title=[class_names[x] for x in classes])
 def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
     since = time.time()
     best_acc = 0.0
-
+    best_model_wts = model.state_dict()
     for epoch in range(num_epochs):
         print('Epoch {}/{}'.format(epoch,num_epochs-1))
         print('-'*10)
@@ -66,7 +70,7 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
             running_corrects = 0
 
             #迭代数据
-            for data in dataloaders[phase]:
+            for i,data in enumerate(dataloaders[phase]):
                 #得到输入数据
                 inputs,labels = data
                 #包装
@@ -76,6 +80,7 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
                 else:
                     inputs,labels = Variable(inputs),Variable(labels)
                 # 梯度归零
+                print(inputs.size())
                 optimizer.zero_grad()
 
                 #向前传播
@@ -87,12 +92,24 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
                     loss.backward()
                     optimizer.step()
                 #对每次迭代的loss 和accuracy 求和
-                    running_loss += loss.data[0]
-                    running_corrects += torch.sum(preds == labels.data)
+                running_loss += loss.data[0]
+                running_corrects += torch.sum(preds == labels.data)
+
             #统计每轮平均loss 和 accuracy
             epoch_loss = running_loss/dataset_sizes[phase]
             epoch_acc = running_corrects / dataset_sizes[phase]
             print('{} loss:{:.4f} acc:{:.4f}'.format(phase,epoch_loss,epoch_acc))
+            # ========================= Log ======================
+            step = epoch
+            # (1) Log the scalar values
+            info = {'loss': epoch_loss, 'accuracy': epoch_acc}
+
+            for tag, value in info.items():
+                logger.scalar_summary(tag, value, step)
+
+
+
+
 
             # 保存最好的模型
             if phase == 'wheat_test' and epoch_acc>best_acc:
@@ -108,30 +125,40 @@ def train_model(model,criterion,optimizer,scheduler,num_epochs=25):
 
 
 def visualize_model(model,num_images=6):
+
     images_so_far = 0
     fig = plt.figure()
     for i,data in enumerate(dataloaders['wheat_test']):
         inputs,labels = data
+
         if use_gpu:
             inputs,labels = Variable(inputs.cuda()),Variable(labels.cuda())
         else:
             inputs,labels = Variable(inputs),Variable(labels)
         outputs = model(inputs)
-        _,preds = torch,max(outputs.data,1)
-        for j in range(inputs.size()[0]):
-            images_so_far += 1
-            ax = plt.subplot(num_images/2,2,images_so_far)
-            ax.axis('off')
-            ax.set_title('predicted:{}'.format(class_names[preds[j]]))
-            imshow(inputs.cpu().data[j])
-            if images_so_far == num_images:
-                return
-model_ft = models.resnet18(pretrained=True)
-num_ftrs = model_ft.fc.in_features
+        _,preds = torch.max(outputs.data,1)
+
+        tag = [class_names[pred] for pred in preds]
+        logger.image_summary(tag,inputs.cpu().data,i)
+        # for j in range(inputs.size()[0]):
+        #     images_so_far += 1
+        #     ax = plt.subplot(num_images/2,2,images_so_far)
+        #     ax.axis('off')
+        #     ax.set_title('predicted:{}'.format(class_names[preds[j]]))
+        #     plt.plot(inputs.cpu().data[j])
+        #     if images_so_far == num_images:
+        #         return
+    # fig.show()
+model_ft = models.alexnet(pretrained=True)
+print(model_ft)
+
+num_ftrs = model_ft.classifier._modules['6'].in_features
 model_ft.fc = nn.Linear(num_ftrs,3)
 if use_gpu:
     model_ft = model_ft.cuda()
 criterion = nn.CrossEntropyLoss()
 optimizer_ft = optim.SGD(model_ft.parameters(),lr=0.001,momentum=0.9)
 exp_lr_scheduler = lr_scheduler.StepLR(optimizer_ft,step_size=7,gamma=0.1)
-model_ft = train_model(model_ft,criterion,optimizer_ft,exp_lr_scheduler,num_epochs=25)
+model_ft = train_model(model_ft,criterion,optimizer_ft,exp_lr_scheduler,num_epochs=24)
+visualize_model(model_ft)
+torch.save(model_ft.state_dict(), 'ill_alexnet.pkl')
